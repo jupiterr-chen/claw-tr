@@ -1,0 +1,31 @@
+//@version=6
+library("lib_core_utils_v1", overlay=false)
+
+// Name: lib_core_utils_v1
+// Type: Library
+// Version: v1
+// Description: Shared helper functions for Pine Script indicators and strategies.
+
+export clamp(float value, float minValue, float maxValue) =>
+    math.max(minValue, math.min(maxValue, value))
+
+export roundToTick(float value, float tickSize) =>
+    tickSize > 0 ? math.round(value / tickSize) * tickSize : value
+
+export percentDistance(float baseValue, float targetValue) =>
+    baseValue != 0 ? ((targetValue - baseValue) / baseValue) * 100.0 : na
+
+export inSession(string sessionInput) =>
+    not na(time(timeframe.period, sessionInput))
+
+export crossoverConfirmed(float fastSeries, float slowSeries, bool confirmOnClose) =>
+    ta.crossover(fastSeries, slowSeries) and (not confirmOnClose or barstate.isconfirmed)
+
+export crossunderConfirmed(float fastSeries, float slowSeries, bool confirmOnClose) =>
+    ta.crossunder(fastSeries, slowSeries) and (not confirmOnClose or barstate.isconfirmed)
+
+export atrStopPrice(float entryPrice, float atrValue, float atrMultiplier, bool isLong) =>
+    isLong ? entryPrice - atrValue * atrMultiplier : entryPrice + atrValue * atrMultiplier
+
+export atrTargetPrice(float entryPrice, float atrValue, float atrMultiplier, bool isLong) =>
+    isLong ? entryPrice + atrValue * atrMultiplier : entryPrice - atrValue * atrMultiplier

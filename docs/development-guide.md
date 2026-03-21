@@ -4,7 +4,7 @@
 
 ## 1. 版本
 
-默认优先使用 Pine Script v5；如果后续确定全面迁移，再统一切到 v6。
+默认统一使用 Pine Script v6；除非有明确兼容性需求，否则不再新增 v5 脚本。
 
 ## 2. 文件头建议
 
@@ -19,7 +19,7 @@
 示例：
 
 ```pine
-//@version=5
+//@version=6
 indicator("EMA Ribbon", overlay=true)
 
 // Name: EMA Ribbon

@@ -1,0 +1,83 @@
+//@version=6
+strategy("Opening Range Breakout v1", shorttitle="ORB v1", overlay=true, initial_capital=100000, pyramiding=0, commission_type=strategy.commission.percent, commission_value=0.05)
+
+// Name: Opening Range Breakout v1
+// Type: Strategy
+// Version: v1
+// Description: Opening range breakout strategy using session high/low with ATR-based risk management.
+
+openingRangeSession = input.session("0930-1000", "Opening Range Session")
+tradeSession = input.session("0930-1600", "Trading Session")
+allowLong = input.bool(true, "Enable Long Trades")
+allowShort = input.bool(true, "Enable Short Trades")
+useVolumeFilter = input.bool(false, "Use Volume Filter")
+volumeSmaLength = input.int(20, "Volume SMA Length", minval=1)
+atrLength = input.int(14, "ATR Length", minval=1)
+stopAtrMult = input.float(1.0, "Stop ATR Multiplier", minval=0.1, step=0.1)
+targetAtrMult = input.float(2.0, "Target ATR Multiplier", minval=0.1, step=0.1)
+closeAtSessionEnd = input.bool(true, "Close Positions Outside Trade Session")
+
+inOpeningRange = not na(time(timeframe.period, openingRangeSession))
+inTradeSession = not na(time(timeframe.period, tradeSession))
+openingRangeStart = inOpeningRange and not inOpeningRange[1]
+openingRangeEnd = not inOpeningRange and inOpeningRange[1]
+newTradeSession = inTradeSession and not inTradeSession[1]
+
+var float openingHigh = na
+var float openingLow = na
+var bool rangeLocked = false
+var bool longTakenToday = false
+var bool shortTakenToday = false
+
+if newTradeSession
+    openingHigh := na
+    openingLow := na
+    rangeLocked := false
+    longTakenToday := false
+    shortTakenToday := false
+
+if openingRangeStart
+    openingHigh := high
+    openingLow := low
+    rangeLocked := false
+
+if inOpeningRange
+    openingHigh := na(openingHigh) ? high : math.max(openingHigh, high)
+    openingLow := na(openingLow) ? low : math.min(openingLow, low)
+
+if openingRangeEnd
+    rangeLocked := true
+
+atrValue = ta.atr(atrLength)
+volumeFilterPass = not useVolumeFilter or volume > ta.sma(volume, volumeSmaLength)
+validLongBreakout = rangeLocked and inTradeSession and allowLong and not longTakenToday and close > openingHigh and close[1] <= openingHigh and volumeFilterPass
+validShortBreakout = rangeLocked and inTradeSession and allowShort and not shortTakenToday and close < openingLow and close[1] >= openingLow and volumeFilterPass
+
+if validLongBreakout and strategy.position_size <= 0
+    strategy.entry("ORB Long", strategy.long)
+    longTakenToday := true
+
+if validShortBreakout and strategy.position_size >= 0
+    strategy.entry("ORB Short", strategy.short)
+    shortTakenToday := true
+
+longStop = strategy.position_avg_price - atrValue * stopAtrMult
+longTarget = strategy.position_avg_price + atrValue * targetAtrMult
+shortStop = strategy.position_avg_price + atrValue * stopAtrMult
+shortTarget = strategy.position_avg_price - atrValue * targetAtrMult
+
+strategy.exit("ORB Long Exit", from_entry="ORB Long", stop=longStop, limit=longTarget)
+strategy.exit("ORB Short Exit", from_entry="ORB Short", stop=shortStop, limit=shortTarget)
+
+if closeAtSessionEnd and not inTradeSession and strategy.position_size != 0
+    strategy.close_all(comment="Session End")
+
+plot(openingHigh, "Opening Range High", color=color.new(color.lime, 0), linewidth=2, style=plot.style_linebr)
+plot(openingLow, "Opening Range Low", color=color.new(color.red, 0), linewidth=2, style=plot.style_linebr)
+
+bgcolor(inOpeningRange ? color.new(color.blue, 92) : na, title="Opening Range Window")
+plotshape(validLongBreakout, title="Long Breakout", style=shape.triangleup, location=location.belowbar, color=color.new(color.lime, 0), size=size.small, text="LONG")
+plotshape(validShortBreakout, title="Short Breakout", style=shape.triangledown, location=location.abovebar, color=color.new(color.red, 0), size=size.small, text="SHORT")
+
+alertcondition(validLongBreakout, title="ORB Long Breakout", message="Opening Range Breakout long signal")
+alertcondition(validShortBreakout, title="ORB Short Breakout", message="Opening Range Breakout short signal")

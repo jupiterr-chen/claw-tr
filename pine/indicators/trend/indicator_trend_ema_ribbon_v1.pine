@@ -1,0 +1,49 @@
+//@version=6
+indicator("EMA Ribbon v1", shorttitle="EMA Ribbon v1", overlay=true, max_labels_count=100)
+
+// Name: EMA Ribbon v1
+// Type: Indicator
+// Version: v1
+// Description: Multi-EMA ribbon with trend coloring and crossover markers.
+
+sourceInput = input.source(close, "Source")
+ema1Length = input.int(8, "EMA 1", minval=1)
+ema2Length = input.int(13, "EMA 2", minval=1)
+ema3Length = input.int(21, "EMA 3", minval=1)
+ema4Length = input.int(34, "EMA 4", minval=1)
+ema5Length = input.int(55, "EMA 5", minval=1)
+showCloud = input.bool(true, "Show Ribbon Cloud")
+showSignals = input.bool(true, "Show Crossover Signals")
+confirmOnClose = input.bool(true, "Confirm Signals On Bar Close")
+
+ema1 = ta.ema(sourceInput, ema1Length)
+ema2 = ta.ema(sourceInput, ema2Length)
+ema3 = ta.ema(sourceInput, ema3Length)
+ema4 = ta.ema(sourceInput, ema4Length)
+ema5 = ta.ema(sourceInput, ema5Length)
+
+isBullStack = ema1 > ema2 and ema2 > ema3 and ema3 > ema4 and ema4 > ema5
+isBearStack = ema1 < ema2 and ema2 < ema3 and ema3 < ema4 and ema4 < ema5
+isNeutral = not isBullStack and not isBearStack
+
+trendColor = isBullStack ? color.new(color.lime, 0) : isBearStack ? color.new(color.red, 0) : color.new(color.orange, 0)
+cloudColor = isBullStack ? color.new(color.lime, 84) : isBearStack ? color.new(color.red, 84) : color.new(color.gray, 88)
+
+plot1 = plot(ema1, "EMA 8", color=color.new(color.aqua, 0), linewidth=2)
+plot2 = plot(ema2, "EMA 13", color=color.new(color.teal, 0), linewidth=2)
+plot3 = plot(ema3, "EMA 21", color=color.new(color.yellow, 0), linewidth=2)
+plot4 = plot(ema4, "EMA 34", color=color.new(color.orange, 0), linewidth=2)
+plot5 = plot(ema5, "EMA 55", color=trendColor, linewidth=2)
+
+fill(plot1, plot5, title="Ribbon Cloud", color=showCloud ? cloudColor : na)
+
+bullCross = ta.crossover(ema1, ema5) and (not confirmOnClose or barstate.isconfirmed)
+bearCross = ta.crossunder(ema1, ema5) and (not confirmOnClose or barstate.isconfirmed)
+
+plotshape(showSignals and bullCross, title="Bullish Cross", style=shape.triangleup, location=location.belowbar, color=color.new(color.lime, 0), size=size.small, text="BUY")
+plotshape(showSignals and bearCross, title="Bearish Cross", style=shape.triangledown, location=location.abovebar, color=color.new(color.red, 0), size=size.small, text="SELL")
+
+bgcolor(isNeutral ? color.new(color.orange, 95) : na, title="Neutral Background")
+
+alertcondition(bullCross, title="EMA Ribbon Bullish Cross", message="EMA Ribbon bullish crossover detected")
+alertcondition(bearCross, title="EMA Ribbon Bearish Cross", message="EMA Ribbon bearish crossover detected")
