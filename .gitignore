@@ -1,0 +1,22 @@
+# macOS
+.DS_Store
+
+# Editors
+.vscode/
+.idea/
+*.swp
+
+# Local exports / experiments
+*.csv
+*.log
+*.tmp
+*.bak
+
+# Python helpers (if later used for research tooling)
+.venv/
+venv/
+__pycache__/
+*.pyc
+
+# Node helpers (if later used for tooling)
+node_modules/
