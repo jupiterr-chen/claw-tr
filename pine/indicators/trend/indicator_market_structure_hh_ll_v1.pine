@@ -1,0 +1,78 @@
+//@version=6
+indicator("Market Structure HH LL v1", shorttitle="MS HH/LL v1", overlay=true, max_lines_count=300, max_labels_count=300)
+
+// Name: Market Structure HH LL v1
+// Type: Indicator
+// Version: v1
+// Description: Confirmed Higher High and Lower Low detection using pivot-based swing structure.
+
+leftBars = input.int(3, "Left Pivot Bars", minval=1)
+rightBars = input.int(3, "Right Pivot Bars", minval=1)
+showSwingLines = input.bool(true, "Show Swing Connector Lines")
+showPivotMarkers = input.bool(true, "Show Pivot Markers")
+showHHLabels = input.bool(true, "Show HH Labels")
+showLLLabels = input.bool(true, "Show LL Labels")
+useWickExtremes = input.bool(true, "Use Wick Extremes")
+
+pivotHighSource = useWickExtremes ? high : math.max(open, close)
+pivotLowSource = useWickExtremes ? low : math.min(open, close)
+
+pivotHigh = ta.pivothigh(pivotHighSource, leftBars, rightBars)
+pivotLow = ta.pivotlow(pivotLowSource, leftBars, rightBars)
+
+var float lastSwingHigh = na
+var float prevSwingHigh = na
+var int lastSwingHighBar = na
+var int prevSwingHighBar = na
+
+var float lastSwingLow = na
+var float prevSwingLow = na
+var int lastSwingLowBar = na
+var int prevSwingLowBar = na
+
+var line lastHighLine = na
+var line lastLowLine = na
+
+confirmedHighBar = bar_index - rightBars
+confirmedLowBar = bar_index - rightBars
+
+isHH = false
+isLL = false
+
+if not na(pivotHigh)
+    prevSwingHigh := lastSwingHigh
+    prevSwingHighBar := lastSwingHighBar
+    lastSwingHigh := pivotHigh
+    lastSwingHighBar := confirmedHighBar
+    isHH := not na(prevSwingHigh) and lastSwingHigh > prevSwingHigh
+
+    if showPivotMarkers
+        label.new(lastSwingHighBar, lastSwingHigh, "PH", style=label.style_label_down, textcolor=color.white, color=color.new(color.blue, 30), size=size.tiny)
+
+    if showHHLabels and isHH
+        label.new(lastSwingHighBar, lastSwingHigh, "HH", style=label.style_label_down, textcolor=color.white, color=color.new(color.lime, 0), size=size.small)
+
+    if showSwingLines and not na(prevSwingHigh) and not na(prevSwingHighBar)
+        line.new(prevSwingHighBar, prevSwingHigh, lastSwingHighBar, lastSwingHigh, color=isHH ? color.new(color.lime, 0) : color.new(color.orange, 20), width=2)
+
+if not na(pivotLow)
+    prevSwingLow := lastSwingLow
+    prevSwingLowBar := lastSwingLowBar
+    lastSwingLow := pivotLow
+    lastSwingLowBar := confirmedLowBar
+    isLL := not na(prevSwingLow) and lastSwingLow < prevSwingLow
+
+    if showPivotMarkers
+        label.new(lastSwingLowBar, lastSwingLow, "PL", style=label.style_label_up, textcolor=color.white, color=color.new(color.purple, 30), size=size.tiny)
+
+    if showLLLabels and isLL
+        label.new(lastSwingLowBar, lastSwingLow, "LL", style=label.style_label_up, textcolor=color.white, color=color.new(color.red, 0), size=size.small)
+
+    if showSwingLines and not na(prevSwingLow) and not na(prevSwingLowBar)
+        line.new(prevSwingLowBar, prevSwingLow, lastSwingLowBar, lastSwingLow, color=isLL ? color.new(color.red, 0) : color.new(color.aqua, 20), width=2)
+
+plotshape(showPivotMarkers ? pivotHigh : na, title="Confirmed Pivot High", style=shape.circle, location=location.absolute, color=color.new(color.blue, 0), size=size.tiny, offset=-rightBars)
+plotshape(showPivotMarkers ? pivotLow : na, title="Confirmed Pivot Low", style=shape.circle, location=location.absolute, color=color.new(color.purple, 0), size=size.tiny, offset=-rightBars)
+
+alertcondition(isHH, title="Higher High Confirmed", message="A confirmed Higher High has formed")
+alertcondition(isLL, title="Lower Low Confirmed", message="A confirmed Lower Low has formed")
