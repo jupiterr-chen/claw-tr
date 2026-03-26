@@ -1,0 +1,143 @@
+//@version=6
+indicator("Market Structure Full v2", shorttitle="MS Full v2", overlay=true, max_lines_count=500, max_labels_count=500)
+
+// Name: Market Structure Full v2
+// Type: Indicator
+// Version: v2
+// Description: Filtered market structure indicator with HH, HL, LH, LL, BOS, CHoCH and ATR-based noise reduction.
+
+leftBars = input.int(5, "Left Pivot Bars", minval=1)
+rightBars = input.int(5, "Right Pivot Bars", minval=1)
+atrLength = input.int(14, "ATR Length", minval=1)
+minSwingAtrMult = input.float(0.75, "Min Swing Distance (ATR)", minval=0.0, step=0.05)
+breakConfirmAtrMult = input.float(0.20, "Break Confirmation Buffer (ATR)", minval=0.0, step=0.05)
+useWickExtremes = input.bool(true, "Use Wick Extremes")
+showPivotLabels = input.bool(true, "Show Structure Labels")
+showSwingLines = input.bool(true, "Show Swing Connector Lines")
+showBreakLabels = input.bool(true, "Show BOS / CHoCH Labels")
+showBreakLevels = input.bool(true, "Show Active Break Levels")
+showTrendBg = input.bool(true, "Show Trend Background")
+
+highSource = useWickExtremes ? high : math.max(open, close)
+lowSource = useWickExtremes ? low : math.min(open, close)
+atrValue = ta.atr(atrLength)
+
+pivotHigh = ta.pivothigh(highSource, leftBars, rightBars)
+pivotLow = ta.pivotlow(lowSource, leftBars, rightBars)
+confirmedPivotBar = bar_index - rightBars
+pivotAtr = atrValue[rightBars]
+
+var float previousHigh = na
+var float latestHigh = na
+var int previousHighBar = na
+var int latestHighBar = na
+var string latestHighType = ""
+
+var float previousLow = na
+var float latestLow = na
+var int previousLowBar = na
+var int latestLowBar = na
+var string latestLowType = ""
+
+var float activeBullBreakLevel = na
+var float activeBearBreakLevel = na
+var int activeBullBreakBar = na
+var int activeBearBreakBar = na
+var bool bullLevelBroken = false
+var bool bearLevelBroken = false
+
+var int trendState = 0
+
+isHH = false
+isLH = false
+isHL = false
+isLL = false
+bullishBreak = false
+bearishBreak = false
+bullishEventText = ""
+bearishEventText = ""
+
+if not na(pivotHigh)
+    highDistanceOk = na(latestHigh) or math.abs(pivotHigh - latestHigh) >= nz(pivotAtr, atrValue) * minSwingAtrMult
+
+    if highDistanceOk
+        previousHigh := latestHigh
+        previousHighBar := latestHighBar
+        latestHigh := pivotHigh
+        latestHighBar := confirmedPivotBar
+
+        isHH := not na(previousHigh) and latestHigh > previousHigh
+        isLH := not na(previousHigh) and latestHigh <= previousHigh
+        latestHighType := na(previousHigh) ? "PH" : isHH ? "HH" : "LH"
+
+        activeBullBreakLevel := latestHigh
+        activeBullBreakBar := latestHighBar
+        bullLevelBroken := false
+
+        if showPivotLabels
+            labelColorHigh = latestHighType == "HH" ? color.new(color.lime, 0) : latestHighType == "LH" ? color.new(color.orange, 0) : color.new(color.blue, 25)
+            label.new(latestHighBar, latestHigh, latestHighType, style=label.style_label_down, textcolor=color.white, color=labelColorHigh, size=size.small)
+
+        if showSwingLines and not na(previousHigh) and not na(previousHighBar)
+            highLineColor = isHH ? color.new(color.lime, 0) : color.new(color.orange, 0)
+            line.new(previousHighBar, previousHigh, latestHighBar, latestHigh, color=highLineColor, width=2)
+
+if not na(pivotLow)
+    lowDistanceOk = na(latestLow) or math.abs(pivotLow - latestLow) >= nz(pivotAtr, atrValue) * minSwingAtrMult
+
+    if lowDistanceOk
+        previousLow := latestLow
+        previousLowBar := latestLowBar
+        latestLow := pivotLow
+        latestLowBar := confirmedPivotBar
+
+        isLL := not na(previousLow) and latestLow < previousLow
+        isHL := not na(previousLow) and latestLow >= previousLow
+        latestLowType := na(previousLow) ? "PL" : isLL ? "LL" : "HL"
+
+        activeBearBreakLevel := latestLow
+        activeBearBreakBar := latestLowBar
+        bearLevelBroken := false
+
+        if showPivotLabels
+            labelColorLow = latestLowType == "LL" ? color.new(color.red, 0) : latestLowType == "HL" ? color.new(color.aqua, 0) : color.new(color.purple, 25)
+            label.new(latestLowBar, latestLow, latestLowType, style=label.style_label_up, textcolor=color.white, color=labelColorLow, size=size.small)
+
+        if showSwingLines and not na(previousLow) and not na(previousLowBar)
+            lowLineColor = isLL ? color.new(color.red, 0) : color.new(color.aqua, 0)
+            line.new(previousLowBar, previousLow, latestLowBar, latestLow, color=lowLineColor, width=2)
+
+bullBreakThreshold = not na(activeBullBreakLevel) ? activeBullBreakLevel + atrValue * breakConfirmAtrMult : na
+bearBreakThreshold = not na(activeBearBreakLevel) ? activeBearBreakLevel - atrValue * breakConfirmAtrMult : na
+
+if not na(bullBreakThreshold) and not bullLevelBroken and close > bullBreakThreshold and close[1] <= bullBreakThreshold
+    bullishBreak := true
+    bullishEventText := trendState == -1 ? "CHoCH↑" : "BOS↑"
+    bullLevelBroken := true
+    trendState := 1
+
+if not na(bearBreakThreshold) and not bearLevelBroken and close < bearBreakThreshold and close[1] >= bearBreakThreshold
+    bearishBreak := true
+    bearishEventText := trendState == 1 ? "CHoCH↓" : "BOS↓"
+    bearLevelBroken := true
+    trendState := -1
+
+if showBreakLabels and bullishBreak
+    label.new(bar_index, high, bullishEventText, style=label.style_label_up, textcolor=color.white, color=color.new(color.lime, 0), size=size.small)
+
+if showBreakLabels and bearishBreak
+    label.new(bar_index, low, bearishEventText, style=label.style_label_down, textcolor=color.white, color=color.new(color.red, 0), size=size.small)
+
+plot(showBreakLevels ? activeBullBreakLevel : na, title="Active Bull Break Level", color=color.new(color.lime, 65), linewidth=2, style=plot.style_linebr)
+plot(showBreakLevels ? activeBearBreakLevel : na, title="Active Bear Break Level", color=color.new(color.red, 65), linewidth=2, style=plot.style_linebr)
+plot(showBreakLevels ? bullBreakThreshold : na, title="Bull Break Threshold", color=color.new(color.lime, 82), linewidth=1, style=plot.style_linebr)
+plot(showBreakLevels ? bearBreakThreshold : na, title="Bear Break Threshold", color=color.new(color.red, 82), linewidth=1, style=plot.style_linebr)
+
+bgcolor(showTrendBg ? trendState == 1 ? color.new(color.lime, 94) : trendState == -1 ? color.new(color.red, 94) : na : na, title="Trend Background")
+
+alertcondition(isHH, title="Higher High Confirmed", message="Confirmed Higher High")
+alertcondition(isHL, title="Higher Low Confirmed", message="Confirmed Higher Low")
+alertcondition(isLH, title="Lower High Confirmed", message="Confirmed Lower High")
+alertcondition(isLL, title="Lower Low Confirmed", message="Confirmed Lower Low")
+alertcondition(bullishBreak, title="Bullish BOS or CHoCH", message="Bullish structure break detected")
+alertcondition(bearishBreak, title="Bearish BOS or CHoCH", message="Bearish structure break detected")
