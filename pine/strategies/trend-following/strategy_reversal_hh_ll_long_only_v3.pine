@@ -1,0 +1,123 @@
+//@version=6
+strategy("Reversal HH LL Long Only v3", shorttitle="Rev HH/LL Long v3", overlay=true, pyramiding=0, initial_capital=100000, commission_type=strategy.commission.percent, commission_value=0.05)
+
+// Name: Reversal HH LL Long Only v3
+// Type: Strategy
+// Version: v3
+// Description: Long-only reversal strategy with cleaner tradeable logic: enter on bullish reversal, stop at structure invalidation, optional bearish reversal exit, fixed RR target, and structure-trailing stop updates.
+
+startTime = input.time(timestamp("2020-01-01 00:00 +0000"), "Backtest Start")
+endTime = input.time(timestamp("2030-01-01 00:00 +0000"), "Backtest End")
+leftBars = input.int(5, "Left Pivot Bars", minval=1)
+rightBars = input.int(5, "Right Pivot Bars", minval=1)
+atrLength = input.int(14, "ATR Length", minval=1)
+minSwingAtrMult = input.float(0.75, "Min Swing Distance (ATR)", minval=0.0, step=0.05)
+riskReward = input.float(2.0, "Take Profit R Multiple", minval=0.5, step=0.25)
+useBearishReversalExit = input.bool(true, "Close Long On Bearish Reversal")
+useStructureTrail = input.bool(true, "Trail Stop To New Confirmed Lows")
+useWickExtremes = input.bool(true, "Use Wick Extremes")
+showHHLLLabels = input.bool(true, "Show HH / LL Labels")
+showTradeSignals = input.bool(true, "Show Tradeable Entry / Exit Signals")
+showStopGuide = input.bool(true, "Show Active Stop Guide")
+
+inDateRange = time >= startTime and time <= endTime
+highSource = useWickExtremes ? high : math.max(open, close)
+lowSource = useWickExtremes ? low : math.min(open, close)
+atrValue = ta.atr(atrLength)
+pivotHigh = ta.pivothigh(highSource, leftBars, rightBars)
+pivotLow = ta.pivotlow(lowSource, leftBars, rightBars)
+confirmedPivotBar = bar_index - rightBars
+pivotAtr = atrValue[rightBars]
+
+var float previousHigh = na
+var float latestHigh = na
+var int latestHighBar = na
+var float previousLow = na
+var float latestLow = na
+var int latestLowBar = na
+var int trendBias = 0
+
+var float activeLongStop = na
+var float initialLongStop = na
+var float activeLongTarget = na
+var line activeStopLine = na
+
+isHH = false
+isLL = false
+bullishReversal = false
+bearishReversal = false
+entrySignal = false
+exitSignal = false
+
+if not na(pivotHigh)
+    highDistanceOk = na(latestHigh) or math.abs(pivotHigh - latestHigh) >= nz(pivotAtr, atrValue) * minSwingAtrMult
+
+    if highDistanceOk
+        previousHigh := latestHigh
+        latestHigh := pivotHigh
+        latestHighBar := confirmedPivotBar
+        isHH := not na(previousHigh) and latestHigh > previousHigh
+
+        if showHHLLLabels and isHH
+            label.new(latestHighBar, latestHigh, "HH", style=label.style_label_down, textcolor=color.white, color=color.new(color.lime, 0), size=size.tiny)
+
+        if isHH and trendBias == -1
+            bullishReversal := true
+
+        if isHH
+            trendBias := 1
+
+if not na(pivotLow)
+    lowDistanceOk = na(latestLow) or math.abs(pivotLow - latestLow) >= nz(pivotAtr, atrValue) * minSwingAtrMult
+
+    if lowDistanceOk
+        previousLow := latestLow
+        latestLow := pivotLow
+        latestLowBar := confirmedPivotBar
+        isLL := not na(previousLow) and latestLow < previousLow
+
+        if showHHLLLabels and isLL
+            label.new(latestLowBar, latestLow, "LL", style=label.style_label_up, textcolor=color.white, color=color.new(color.red, 0), size=size.tiny)
+
+        if isLL and trendBias == 1
+            bearishReversal := true
+
+        if isLL
+            trendBias := -1
+
+        if strategy.position_size > 0 and useStructureTrail and not na(activeLongStop) and latestLow > activeLongStop and latestLow < close
+            activeLongStop := latestLow
+            if showStopGuide
+                if not na(activeStopLine)
+                    line.delete(activeStopLine)
+                activeStopLine := line.new(latestLowBar, latestLow, bar_index, latestLow, extend=extend.right, color=color.new(color.lime, 35), width=1, style=line.style_dashed)
+
+entrySignal := inDateRange and bullishReversal and strategy.position_size == 0 and not na(latestLow)
+
+if entrySignal
+    initialLongStop := latestLow
+    activeLongStop := latestLow
+    riskDistance = close - initialLongStop
+    activeLongTarget := riskDistance > 0 ? close + riskDistance * riskReward : na
+    strategy.entry("Long", strategy.long, comment="R↑ Entry")
+
+    if showStopGuide and not na(latestLow)
+        if not na(activeStopLine)
+            line.delete(activeStopLine)
+        activeStopLine := line.new(latestLowBar, latestLow, bar_index, latestLow, extend=extend.right, color=color.new(color.lime, 35), width=1, style=line.style_dashed)
+
+if strategy.position_size > 0 and not na(activeLongStop)
+    strategy.exit("Long Exit", from_entry="Long", stop=activeLongStop, limit=activeLongTarget)
+
+exitSignal := strategy.position_size > 0 and useBearishReversalExit and bearishReversal
+if exitSignal
+    strategy.close("Long", comment="Bearish Reversal Exit")
+
+if strategy.position_size > 0 and not inDateRange
+    strategy.close("Long", comment="Outside Backtest Range")
+
+plotshape(showTradeSignals and entrySignal, title="Long Entry Signal", style=shape.triangleup, location=location.belowbar, color=color.new(color.lime, 0), size=size.small, text="L", textcolor=color.white)
+plotshape(showTradeSignals and exitSignal, title="Long Exit Signal", style=shape.triangledown, location=location.abovebar, color=color.new(color.red, 0), size=size.small, text="X", textcolor=color.white)
+
+alertcondition(entrySignal, title="Long Entry Signal", message="Long entry confirmed by bullish reversal")
+alertcondition(exitSignal, title="Long Exit Signal", message="Long exit confirmed by bearish reversal")
