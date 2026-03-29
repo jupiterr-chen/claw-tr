@@ -1,0 +1,101 @@
+//@version=6
+indicator("Reversal HH LL Assist v2", shorttitle="Rev HH/LL v2", overlay=true, max_labels_count=300, max_lines_count=100)
+
+// Name: Reversal HH LL Assist v2
+// Type: Indicator
+// Version: v2
+// Description: Minimal-but-practical reversal indicator with HH/LL labels, smaller reversal markers and invalidation guide lines.
+
+leftBars = input.int(5, "Left Pivot Bars", minval=1)
+rightBars = input.int(5, "Right Pivot Bars", minval=1)
+atrLength = input.int(14, "ATR Length", minval=1)
+minSwingAtrMult = input.float(0.75, "Min Swing Distance (ATR)", minval=0.0, step=0.05)
+showHHLLLabels = input.bool(true, "Show HH / LL Labels")
+showReversalSignals = input.bool(true, "Show Reversal Signals")
+showInvalidationLevels = input.bool(true, "Show Invalidation Guide Lines")
+showTrendBackground = input.bool(true, "Show Trend Background")
+useWickExtremes = input.bool(true, "Use Wick Extremes")
+
+highSource = useWickExtremes ? high : math.max(open, close)
+lowSource = useWickExtremes ? low : math.min(open, close)
+atrValue = ta.atr(atrLength)
+pivotHigh = ta.pivothigh(highSource, leftBars, rightBars)
+pivotLow = ta.pivotlow(lowSource, leftBars, rightBars)
+confirmedPivotBar = bar_index - rightBars
+pivotAtr = atrValue[rightBars]
+
+var float previousHigh = na
+var float latestHigh = na
+var int latestHighBar = na
+var float previousLow = na
+var float latestLow = na
+var int latestLowBar = na
+var int trendBias = 0  // 1 bullish, -1 bearish, 0 neutral
+
+var float bullInvalidationLevel = na
+var float bearInvalidationLevel = na
+var line bullInvalidationLine = na
+var line bearInvalidationLine = na
+
+isHH = false
+isLL = false
+bullishReversal = false
+bearishReversal = false
+
+if not na(pivotHigh)
+    highDistanceOk = na(latestHigh) or math.abs(pivotHigh - latestHigh) >= nz(pivotAtr, atrValue) * minSwingAtrMult
+
+    if highDistanceOk
+        previousHigh := latestHigh
+        latestHigh := pivotHigh
+        latestHighBar := confirmedPivotBar
+        isHH := not na(previousHigh) and latestHigh > previousHigh
+
+        if showHHLLLabels and isHH
+            label.new(latestHighBar, latestHigh, "HH", style=label.style_label_down, textcolor=color.white, color=color.new(color.lime, 0), size=size.tiny)
+
+        if isHH and trendBias == -1
+            bullishReversal := true
+            bullInvalidationLevel := latestLow
+
+            if showInvalidationLevels and not na(latestLow)
+                if not na(bullInvalidationLine)
+                    line.delete(bullInvalidationLine)
+                bullInvalidationLine := line.new(latestLowBar, latestLow, bar_index, latestLow, extend=extend.right, color=color.new(color.lime, 45), width=1, style=line.style_dashed)
+
+        if isHH
+            trendBias := 1
+
+if not na(pivotLow)
+    lowDistanceOk = na(latestLow) or math.abs(pivotLow - latestLow) >= nz(pivotAtr, atrValue) * minSwingAtrMult
+
+    if lowDistanceOk
+        previousLow := latestLow
+        latestLow := pivotLow
+        latestLowBar := confirmedPivotBar
+        isLL := not na(previousLow) and latestLow < previousLow
+
+        if showHHLLLabels and isLL
+            label.new(latestLowBar, latestLow, "LL", style=label.style_label_up, textcolor=color.white, color=color.new(color.red, 0), size=size.tiny)
+
+        if isLL and trendBias == 1
+            bearishReversal := true
+            bearInvalidationLevel := latestHigh
+
+            if showInvalidationLevels and not na(latestHigh)
+                if not na(bearInvalidationLine)
+                    line.delete(bearInvalidationLine)
+                bearInvalidationLine := line.new(latestHighBar, latestHigh, bar_index, latestHigh, extend=extend.right, color=color.new(color.red, 45), width=1, style=line.style_dashed)
+
+        if isLL
+            trendBias := -1
+
+plotshape(showReversalSignals and bullishReversal, title="Bullish Reversal", style=shape.triangleup, location=location.belowbar, color=color.new(color.lime, 0), size=size.small, text="R↑", textcolor=color.white)
+plotshape(showReversalSignals and bearishReversal, title="Bearish Reversal", style=shape.triangledown, location=location.abovebar, color=color.new(color.red, 0), size=size.small, text="R↓", textcolor=color.white)
+
+bgcolor(showTrendBackground ? trendBias == 1 ? color.new(color.lime, 95) : trendBias == -1 ? color.new(color.red, 95) : na : na, title="Trend Background")
+
+alertcondition(isHH, title="Higher High Confirmed", message="Higher High confirmed")
+alertcondition(isLL, title="Lower Low Confirmed", message="Lower Low confirmed")
+alertcondition(bullishReversal, title="Bullish Reversal Confirmed", message="Bullish reversal confirmed by Higher High")
+alertcondition(bearishReversal, title="Bearish Reversal Confirmed", message="Bearish reversal confirmed by Lower Low")
