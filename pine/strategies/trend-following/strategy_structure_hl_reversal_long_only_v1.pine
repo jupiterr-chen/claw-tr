@@ -1,0 +1,141 @@
+//@version=6
+strategy("Structure HL Reversal Long Only v1", shorttitle="Struct HL Long v1", overlay=true, pyramiding=0, initial_capital=100000, commission_type=strategy.commission.percent, commission_value=0.05)
+
+// Name: Structure HL Reversal Long Only v1
+// Type: Strategy
+// Version: v1
+// Description: Long-only strategy based on bearish trend -> HL watch -> breakout confirmation above prior swing high.
+
+startTime = input.time(timestamp("2020-01-01 00:00 +0000"), "Backtest Start")
+endTime = input.time(timestamp("2030-01-01 00:00 +0000"), "Backtest End")
+leftBars = input.int(5, "Left Pivot Bars", minval=1)
+rightBars = input.int(5, "Right Pivot Bars", minval=1)
+atrLength = input.int(14, "ATR Length", minval=1)
+minSwingAtrMult = input.float(0.75, "Min Swing Distance (ATR)", minval=0.0, step=0.05)
+riskReward = input.float(2.0, "Take Profit R Multiple", minval=0.5, step=0.25)
+useLLExit = input.bool(true, "Close Long On New LL")
+showStructureLabels = input.bool(true, "Show HH / HL / LH / LL")
+showTradeSignals = input.bool(true, "Show HL? / L / X")
+showStopGuide = input.bool(true, "Show Stop Guide")
+useWickExtremes = input.bool(true, "Use Wick Extremes")
+
+inDateRange = time >= startTime and time <= endTime
+highSource = useWickExtremes ? high : math.max(open, close)
+lowSource = useWickExtremes ? low : math.min(open, close)
+atrValue = ta.atr(atrLength)
+pivotHigh = ta.pivothigh(highSource, leftBars, rightBars)
+pivotLow = ta.pivotlow(lowSource, leftBars, rightBars)
+confirmedPivotBar = bar_index - rightBars
+pivotAtr = atrValue[rightBars]
+
+var float previousHigh = na
+var float latestHigh = na
+var int latestHighBar = na
+var string latestHighType = ""
+
+var float previousLow = na
+var float latestLow = na
+var int latestLowBar = na
+var string latestLowType = ""
+
+var int trendBias = 0
+
+var bool pendingLongSetup = false
+var float pendingBreakLevel = na
+var float pendingStopLevel = na
+var int pendingStopBar = na
+
+var float activeLongStop = na
+var float activeLongTarget = na
+var line activeStopGuide = na
+
+isHH = false
+isLH = false
+isHL = false
+isLL = false
+longWatch = false
+longSignal = false
+exitSignal = false
+
+if not na(pivotHigh)
+    highDistanceOk = na(latestHigh) or math.abs(pivotHigh - latestHigh) >= nz(pivotAtr, atrValue) * minSwingAtrMult
+
+    if highDistanceOk
+        previousHigh := latestHigh
+        latestHigh := pivotHigh
+        latestHighBar := confirmedPivotBar
+        isHH := not na(previousHigh) and latestHigh > previousHigh
+        isLH := not na(previousHigh) and latestHigh <= previousHigh
+        latestHighType := na(previousHigh) ? "PH" : isHH ? "HH" : "LH"
+
+        if showStructureLabels and (isHH or isLH)
+            labelColorHigh = isHH ? color.new(color.lime, 0) : color.new(color.orange, 0)
+            labelTextHigh = isHH ? "HH" : "LH"
+            label.new(latestHighBar, latestHigh, labelTextHigh, style=label.style_label_down, textcolor=color.white, color=labelColorHigh, size=size.tiny)
+
+if not na(pivotLow)
+    bearishTrendBeforeLow = trendBias == -1
+    lowDistanceOk = na(latestLow) or math.abs(pivotLow - latestLow) >= nz(pivotAtr, atrValue) * minSwingAtrMult
+
+    if lowDistanceOk
+        previousLow := latestLow
+        latestLow := pivotLow
+        latestLowBar := confirmedPivotBar
+        isLL := not na(previousLow) and latestLow < previousLow
+        isHL := not na(previousLow) and latestLow >= previousLow
+        latestLowType := na(previousLow) ? "PL" : isLL ? "LL" : "HL"
+
+        if showStructureLabels and (isHL or isLL)
+            labelColorLow = isLL ? color.new(color.red, 0) : color.new(color.aqua, 0)
+            labelTextLow = isLL ? "LL" : "HL"
+            label.new(latestLowBar, latestLow, labelTextLow, style=label.style_label_up, textcolor=color.white, color=labelColorLow, size=size.tiny)
+
+        if isHL and bearishTrendBeforeLow and not na(latestHigh)
+            longWatch := true
+            pendingLongSetup := true
+            pendingBreakLevel := latestHigh
+            pendingStopLevel := latestLow
+            pendingStopBar := latestLowBar
+
+        if isLL
+            if strategy.position_size > 0 and useLLExit
+                exitSignal := true
+            pendingLongSetup := false
+            pendingBreakLevel := na
+            pendingStopLevel := na
+            pendingStopBar := na
+
+if latestHighType == "HH" and latestLowType == "HL"
+    trendBias := 1
+else if latestHighType == "LH" and latestLowType == "LL"
+    trendBias := -1
+
+if inDateRange and pendingLongSetup and strategy.position_size == 0 and not na(pendingBreakLevel) and close > pendingBreakLevel and close[1] <= pendingBreakLevel
+    longSignal := true
+    pendingLongSetup := false
+    activeLongStop := pendingStopLevel
+    riskDistance = close - activeLongStop
+    activeLongTarget := riskDistance > 0 ? close + riskDistance * riskReward : na
+    strategy.entry("Long", strategy.long, comment="HL Breakout Long")
+
+    if showStopGuide and not na(pendingStopLevel)
+        if not na(activeStopGuide)
+            line.delete(activeStopGuide)
+        activeStopGuide := line.new(pendingStopBar, pendingStopLevel, bar_index, pendingStopLevel, extend=extend.right, color=color.new(color.lime, 45), width=1, style=line.style_dashed)
+
+if strategy.position_size > 0 and not na(activeLongStop)
+    strategy.exit("Long Exit", from_entry="Long", stop=activeLongStop, limit=activeLongTarget)
+
+if strategy.position_size > 0 and exitSignal
+    strategy.close("Long", comment="New LL Exit")
+
+if strategy.position_size > 0 and not inDateRange
+    strategy.close("Long", comment="Outside Backtest Range")
+
+plotshape(showTradeSignals and longWatch, title="HL Reversal Watch", style=shape.circle, location=location.belowbar, color=color.new(color.aqua, 0), size=size.tiny, text="HL?")
+plotshape(showTradeSignals and longSignal, title="Long Trigger", style=shape.triangleup, location=location.belowbar, color=color.new(color.lime, 0), size=size.small, text="L", textcolor=color.white)
+plotshape(showTradeSignals and exitSignal, title="LL Exit", style=shape.triangledown, location=location.abovebar, color=color.new(color.red, 0), size=size.small, text="X", textcolor=color.white)
+
+alertcondition(longWatch, title="HL Reversal Watch", message="Potential bullish reversal watch: HL formed in bearish structure")
+alertcondition(longSignal, title="Long Trigger", message="Long trigger: price broke above prior swing high after HL watch")
+alertcondition(exitSignal, title="LL Exit", message="Exit long: new LL formed")
